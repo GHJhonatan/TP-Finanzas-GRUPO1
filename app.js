@@ -1,3 +1,6 @@
+// Estado global de la aplicación (Base de Datos Local)
+let listaClientes = [];
+
 // Manejo de Interfaz y Navegación
 function switchAuthTab(tab) {
     const isLogin = tab === 'login';
@@ -17,7 +20,10 @@ function handleLogin(e) {
     e.preventDefault();
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
-    calcularCredito(new Event('submit'));
+    
+    // Limpiar pantalla inicial
+    resetearPantallaSimulador();
+    actualizarSelectClientes();
 }
 
 function handleRegister(e) {
@@ -44,22 +50,101 @@ function switchNav(nav) {
     });
 }
 
-// Escuchar cambios en selector de gracia para mostrar duración
-document.getElementById('sim-gracia-tipo').addEventListener('change', (e) => {
+// Resetear pantalla del simulador a estado inicial (Vacío)
+function resetearPantallaSimulador() {
+    document.getElementById('sim-cliente').value = '';
+    document.getElementById('sim-dni').value = '';
+    document.getElementById('sim-monto').value = '';
+    document.getElementById('sim-plazo').value = '';
+    document.getElementById('sim-tasa').value = '';
+    
+    document.getElementById('kpi-cuota').innerText = 'S/ 0.00';
+    document.getElementById('kpi-interes').innerText = 'S/ 0.00';
+    document.getElementById('kpi-total').innerText = 'S/ 0.00';
+    
+    const tbody = document.getElementById('tabla-amortizacion');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="6" class="p-8 text-center text-slate-400">
+                <i class="fa-solid fa-folder-open text-2xl mb-2 block text-slate-300"></i>
+                No hay datos calculados. Ingrese los parámetros del crédito y haga clic en <b>"Generar Cronograma"</b>.
+            </td>
+        </tr>
+    `;
+}
+
+// Agregar Nuevo Cliente
+function registrarCliente(e) {
+    e.preventDefault();
+    const nombre = document.getElementById('reg-cli-nombre').value.trim();
+    const dni = document.getElementById('reg-cli-dni').value.trim();
+    const limite = parseFloat(document.getElementById('reg-cli-limite').value) || 0;
+
+    if (!nombre || !dni || limite <= 0) {
+        alert('Por favor complete todos los datos del cliente correctamente.');
+        return;
+    }
+
+    const cliente = { id: Date.now(), nombre, dni, limite, deudaActual: 0 };
+    listaClientes.push(cliente);
+
+    // Limpiar formulario de registro de cliente
+    document.getElementById('reg-cli-nombre').value = '';
+    document.getElementById('reg-cli-dni').value = '';
+    document.getElementById('reg-cli-limite').value = '';
+
+    actualizarSelectClientes();
+    renderizarListaClientes();
+    alert(`Cliente ${nombre} registrado con éxito.`);
+}
+
+function actualizarSelectClientes() {
+    const select = document.getElementById('sim-cliente');
+    if (!select) return;
+
+    if (listaClientes.length === 0) {
+        select.innerHTML = '<option value="">-- No hay clientes. Regístrelos en el módulo Clientes --</option>';
+        return;
+    }
+
+    select.innerHTML = '<option value="">-- Seleccionar Cliente Registrado --</option>';
+    listaClientes.forEach(c => {
+        select.innerHTML += `<option value="${c.id}">${c.nombre} (DNI: ${c.dni}) - Límit: S/ ${c.limite}</option>`;
+    });
+}
+
+// Al seleccionar un cliente en el dropdown, autocompletar DNI
+document.getElementById('sim-cliente')?.addEventListener('change', (e) => {
+    const id = parseInt(e.target.value);
+    const cliente = listaClientes.find(c => c.id === id);
+    if (cliente) {
+        document.getElementById('sim-dni').value = cliente.dni;
+    } else {
+        document.getElementById('sim-dni').value = '';
+    }
+});
+
+// Escuchar cambios en selector de gracia
+document.getElementById('sim-gracia-tipo')?.addEventListener('change', (e) => {
     document.getElementById('box-gracia-meses').classList.toggle('hidden', e.target.value === 'ninguno');
 });
 
 // MOTOR FINANCIERO: Método Francés Vencido (Base 30/360)
 function calcularCredito(e) {
-    if(e) e.preventDefault();
+    if (e) e.preventDefault();
 
     const monto = parseFloat(document.getElementById('sim-monto').value) || 0;
     const moneda = document.getElementById('sim-moneda').value;
-    const plazo = parseInt(document.getElementById('sim-plazo').value) || 1;
+    const plazo = parseInt(document.getElementById('sim-plazo').value) || 0;
     let tasaInput = parseFloat(document.getElementById('sim-tasa').value) / 100 || 0;
     const tipoTasa = document.getElementById('sim-tipo-tasa').value;
     const graciaTipo = document.getElementById('sim-gracia-tipo').value;
     const graciaMeses = graciaTipo !== 'ninguno' ? (parseInt(document.getElementById('sim-gracia-meses').value) || 0) : 0;
+
+    if (monto <= 0 || plazo <= 0 || tasaInput <= 0) {
+        alert('Por favor ingrese valores mayores a cero en Monto, Plazo y Tasa de Interés.');
+        return;
+    }
 
     // Conversión de Tasa a TEM (Tasa Efectiva Mensual)
     let TEM = 0;
@@ -161,4 +246,30 @@ function calcularMora() {
     const mora = monto * tasaDiaria * dias;
     document.getElementById('res-mora-monto').innerText = `S/ ${mora.toFixed(2)}`;
     document.getElementById('res-mora-total').innerText = `S/ ${(monto + mora).toFixed(2)}`;
+}
+
+function renderizarListaClientes() {
+    const cont = document.getElementById('contenedor-lista-clientes');
+    if (!cont) return;
+
+    if (listaClientes.length === 0) {
+        cont.innerHTML = '<p class="text-xs text-slate-400">No hay clientes registrados aún.</p>';
+        return;
+    }
+
+    cont.innerHTML = '';
+    listaClientes.forEach(c => {
+        const pct = Math.min((c.deudaActual / c.limite) * 100, 100);
+        cont.innerHTML += `
+            <div class="bg-white p-3 rounded-xl border border-slate-200">
+                <div class="flex justify-between font-bold text-slate-800 mb-1 text-xs">
+                    <span>${c.nombre} (DNI: ${c.dni})</span>
+                    <span class="text-teal-600">S/ ${c.deudaActual.toFixed(2)} / S/ ${c.limite.toFixed(2)}</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-2">
+                    <div class="bg-teal-500 h-2 rounded-full" style="width: ${pct}%"></div>
+                </div>
+            </div>
+        `;
+    });
 }
